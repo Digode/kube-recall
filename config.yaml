@@ -21,7 +21,7 @@ kubernetes:
   targets:
     - configPath: /repos/digode/kube-recal/kubeconfig
 filters:
-  kube_cluster_name: production
+  kube_cluster_name: productionx
 scales:
   cpu:
     request: 1.15
