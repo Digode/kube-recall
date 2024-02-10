@@ -10,9 +10,9 @@ var logger = util.GetLogger()
 var cfg = config.Get()
 
 func main() {
-	logger.Info("Starting the application...")
+	logger.Debug("Starting the application...")
 
 	checker.CheckResources()
 
-	logger.Info("Checking resources...")
+	logger.Debug("Checking resources...")
 }

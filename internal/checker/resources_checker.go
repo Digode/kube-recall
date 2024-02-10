@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -46,9 +48,10 @@ func CheckResources() {
 					deploy = strings.ReplaceAll(deploy, target.From, target.To)
 				}
 
-				deployment, err := clientset.AppsV1().Deployments(namespace).Get(context.Background(), deploy, v1.GetOptions{})
+				deployment, err := clientset.AppsV1().Deployments(namespace).Get(context.Background(), deploy, metav1.GetOptions{})
 				if err != nil {
 					logger.Error(fmt.Sprintf("Error getting deployment %s in namespace %s: %s", deploy, namespace, err.Error()))
+					continue
 				}
 
 				actualCpuRequest := deployment.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu().MilliValue()
@@ -66,17 +69,40 @@ func CheckResources() {
 					actualMemoryRequest != newMemoryRequest ||
 					actualMemoryLimit != newMemoryLimit {
 
-					deployment.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu().SetMilli(int64(resources.CPU.Request))
-					deployment.Spec.Template.Spec.Containers[0].Resources.Limits.Cpu().SetMilli(int64(resources.CPU.Limit))
-					deployment.Spec.Template.Spec.Containers[0].Resources.Requests.Memory().SetMilli(int64(resources.Memory.Request))
-					deployment.Spec.Template.Spec.Containers[0].Resources.Limits.Memory().SetMilli(int64(resources.Memory.Limit))
+					cpuRequest := resource.NewMilliQuantity(newCpuRequest, resource.DecimalSI)
+					cpuLimit := resource.NewMilliQuantity(newCpuLimit, resource.DecimalSI)
+					memoryRequest := resource.NewQuantity(newMemoryRequest*1024*1024, resource.BinarySI)
+					memoryLimit := resource.NewQuantity(newMemoryLimit*1024*1024, resource.BinarySI)
 
-					_, err = clientset.AppsV1().Deployments(namespace).Update(context.Background(), deployment, v1.UpdateOptions{})
+					if deployment.Spec.Template.Spec.Containers[0].Resources.Requests == nil {
+						deployment.Spec.Template.Spec.Containers[0].Resources = v1.ResourceRequirements{}
+					}
+
+					if deployment.Spec.Template.Spec.Containers[0].Resources.Requests == nil {
+						deployment.Spec.Template.Spec.Containers[0].Resources.Requests = make(v1.ResourceList)
+					}
+
+					if deployment.Spec.Template.Spec.Containers[0].Resources.Limits == nil {
+						deployment.Spec.Template.Spec.Containers[0].Resources.Limits = make(v1.ResourceList)
+					}
+
+					deployment.Spec.Template.Spec.Containers[0].Resources.Requests["cpu"] = *cpuRequest
+					deployment.Spec.Template.Spec.Containers[0].Resources.Limits["cpu"] = *cpuLimit
+					deployment.Spec.Template.Spec.Containers[0].Resources.Requests["memory"] = *memoryRequest
+					deployment.Spec.Template.Spec.Containers[0].Resources.Limits["memory"] = *memoryLimit
+
+					deploymentUpdated, err := clientset.AppsV1().Deployments(namespace).Update(context.Background(), deployment, metav1.UpdateOptions{})
 					if err != nil {
 						logger.Error(fmt.Sprintf("Error updating deployment %s in namespace %s: %s", deployment.Name, namespace, err.Error()))
 					}
+
+					logger.Info(fmt.Sprintf("Deployment %s in namespace %s updated with new resources: cpu: %v m/%v m => %v m/%v m; memory: %v Mi/%v Mi => %v Mi/%v Mi",
+						deploymentUpdated.Name, namespace,
+						actualCpuRequest, actualCpuLimit, newCpuRequest, newCpuLimit,
+						actualMemoryRequest, actualMemoryLimit, newMemoryRequest, newMemoryLimit,
+					))
 				} else {
-					logger.Info(fmt.Sprintf("Deployment %s in namespace %s already has the correct resources", deployment.Name, namespace))
+					logger.Debug(fmt.Sprintf("Deployment %s in namespace %s already has the correct resources", deployment.Name, namespace))
 				}
 			}
 		}
@@ -116,10 +142,8 @@ func calculateNewResources(metrics map[string]model.Metrics) map[string]map[stri
 		}
 		newResources[metric.Namespace][metric.Deployment] = new
 
-		logger.Info(fmt.Sprintf("%s => Avg CPU/Memory %f/%f => Max CPU/Memory: %f/%f", metric.Deployment, avg.CPU.Usage, avg.Memory.Usage, maxCpuUsage, maxMemoryUsage))
-		logger.Info(fmt.Sprintf("%s => New values for: CPU: %f/%f, Memory: %f/%f", metric.Deployment, new.CPU.Request, new.CPU.Limit, new.Memory.Request, new.Memory.Limit))
-
-		logger.Info("-----------------------------------")
+		logger.Debug(fmt.Sprintf("%s => Avg CPU/Memory %f/%f => Max CPU/Memory: %f/%f", metric.Deployment, avg.CPU.Usage, avg.Memory.Usage, maxCpuUsage, maxMemoryUsage))
+		logger.Debug(fmt.Sprintf("%s => New values for: CPU: %f/%f, Memory: %f/%f", metric.Deployment, new.CPU.Request, new.CPU.Limit, new.Memory.Request, new.Memory.Limit))
 	}
 
 	return newResources
