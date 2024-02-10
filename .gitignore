@@ -22,5 +22,5 @@ go.work
 
 # configs
 config.yaml
-kubeconfig.yaml
 kubeconfig
+kubeconfig.yaml
