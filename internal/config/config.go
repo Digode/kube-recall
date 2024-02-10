@@ -2,6 +2,7 @@ package config
 
 import (
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/uuid"
 )
 
 type (
@@ -43,6 +44,7 @@ type (
 		} `yaml:"scales"`
 	}
 	Target struct {
+		id         string
 		From       string `yaml:"from"`
 		To         string `yaml:"to"`
 		ConfigPath string `yaml:"configPath"`
@@ -61,4 +63,11 @@ func Get() Config {
 	}
 	config.env()
 	return config
+}
+
+func (t *Target) ID() string {
+	if t.id == "" {
+		t.id = uuid.NewString()
+	}
+	return t.id
 }
