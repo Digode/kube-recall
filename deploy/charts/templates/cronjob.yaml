@@ -1,0 +1,64 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "kube-recall.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+  {{- include "kube-recall.annotations" . | nindent 4 }}
+  labels:
+  {{- include "kube-recall.labels" . | nindent 4 }}
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  schedule: "{{ .Values.schedule }}"
+  startingDeadlineSeconds: 10
+  successfulJobsHistoryLimit: 3
+  suspend: false
+  jobTemplate:
+    metadata:
+      annotations:
+      {{- include "kube-recall.annotations" . | nindent 8 }}
+      labels:
+      {{- include "kube-recall.labels" . | nindent 8 }}
+    spec:
+      template:
+        metadata:
+          annotations:
+          {{- include "kube-recall.annotations" . | nindent 12 }}
+          labels:
+          {{- include "kube-recall.labels" . | nindent 12 }}
+        spec:
+          restartPolicy: OnFailure
+          {{- with .Values.serviceAccountName }}
+          serviceAccountName: {{ . }}
+          {{- end }}
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: {{ .Chart.Name }}
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              {{- with .Values.volumeMounts }}
+              volumeMounts:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+          {{- with .Values.volumes }}
+          volumes:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

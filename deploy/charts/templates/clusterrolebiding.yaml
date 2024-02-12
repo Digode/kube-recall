@@ -1,0 +1,18 @@
+{{- if .Values.serviceAccount.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kube-recall.fullname" . }}
+  annotations:
+  {{- include "kube-recall.annotations" . | nindent 4 }}
+  labels:
+  {{- include "kube-recall.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kube-recall.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+    kind: ClusterRole
+    name: {{ include "kube-recall.fullname" . }}
+    apiGroup: rbac.authorization.k8s.io
+{{- end -}}
