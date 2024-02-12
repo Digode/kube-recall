@@ -1,4 +1,4 @@
-module k8s-resources-update
+module kube-recall
 
 go 1.21.4
 

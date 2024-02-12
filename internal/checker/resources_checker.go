@@ -2,11 +2,12 @@ package checker
 
 import (
 	"fmt"
-	"k8s-resources-update/internal/config"
-	"k8s-resources-update/internal/datadog"
-	"k8s-resources-update/internal/kubernetes"
-	"k8s-resources-update/internal/model"
-	"k8s-resources-update/internal/util"
+	"kube-recall/internal/config"
+	"kube-recall/internal/kubernetes"
+	"kube-recall/internal/model"
+	"kube-recall/internal/provider/datadog"
+	"kube-recall/internal/util"
+	"sync"
 	"time"
 )
 
@@ -14,20 +15,23 @@ var logger = util.GetLogger()
 var cfg = config.Get()
 
 func CheckResources() {
-	end := time.Now()
-	begin := end.AddDate(0, 0, cfg.DataDog.Times.Begin)
-	end = end.AddDate(0, 0, cfg.DataDog.Times.End)
-	metrics, err := datadog.GetMetrics(cfg.Filters, begin, end)
+	metrics, err := datadog.GetMetrics(cfg.Filters)
 	if err != nil {
 		panic(err.Error())
 	}
-	newResources := calculateNewResources(metrics)
 
-	for namespace, deployments := range newResources {
+	var wg sync.WaitGroup
+
+	for namespace, deployments := range calculateNewResources(metrics) {
 		for deploy, resources := range deployments {
-			kubernetes.UpdateDeployment(namespace, deploy, resources)
+			wg.Add(1)
+			go func(ns string, dp string, res model.Resources) {
+				defer wg.Done()
+				kubernetes.UpdateDeployment(ns, dp, res)
+			}(namespace, deploy, resources)
 		}
 	}
+	wg.Wait()
 }
 
 func calculateNewResources(metrics map[string]model.Metrics) map[string]map[string]model.Resources {

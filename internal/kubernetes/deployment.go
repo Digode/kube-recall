@@ -3,13 +3,15 @@ package kubernetes
 import (
 	"context"
 	"fmt"
-	"k8s-resources-update/internal/config"
-	"k8s-resources-update/internal/model"
+	"kube-recall/internal/config"
+	"kube-recall/internal/model"
 	"strings"
 
+	appv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 func UpdateDeployment(namespace string, deploy string, resources model.Resources) error {
@@ -33,55 +35,65 @@ func updateDeployment(target config.Target, namespace string, deploy string, res
 		return err
 	}
 
-	actualCpuRequest := deployment.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu().MilliValue()
-	actualCpuLimit := deployment.Spec.Template.Spec.Containers[0].Resources.Limits.Cpu().MilliValue()
-	actualMemoryRequest := deployment.Spec.Template.Spec.Containers[0].Resources.Requests.Memory().MilliValue() / 1000 / 1024 / 1024
-	actualMemoryLimit := deployment.Spec.Template.Spec.Containers[0].Resources.Limits.Memory().MilliValue() / 1000 / 1024 / 1024
+	updateResources(cliSet, namespace, deployment,
+		deployment.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu().MilliValue(),
+		deployment.Spec.Template.Spec.Containers[0].Resources.Limits.Cpu().MilliValue(),
+		int64(resources.CPU.Request),
+		int64(resources.CPU.Limit),
 
-	newCpuRequest := int64(resources.CPU.Request)
-	newCpuLimit := int64(resources.CPU.Limit)
-	newMemoryRequest := int64(resources.Memory.Request)
-	newMemoryLimit := int64(resources.Memory.Limit)
-
-	if actualCpuRequest != newCpuRequest ||
-		actualCpuLimit != newCpuLimit ||
-		actualMemoryRequest != newMemoryRequest ||
-		actualMemoryLimit != newMemoryLimit {
-
-		cpuRequest := resource.NewMilliQuantity(newCpuRequest, resource.DecimalSI)
-		cpuLimit := resource.NewMilliQuantity(newCpuLimit, resource.DecimalSI)
-		memoryRequest := resource.NewQuantity(newMemoryRequest*1024*1024, resource.BinarySI)
-		memoryLimit := resource.NewQuantity(newMemoryLimit*1024*1024, resource.BinarySI)
-
-		if deployment.Spec.Template.Spec.Containers[0].Resources.Requests == nil {
-			deployment.Spec.Template.Spec.Containers[0].Resources = v1.ResourceRequirements{}
-		}
-
-		if deployment.Spec.Template.Spec.Containers[0].Resources.Requests == nil {
-			deployment.Spec.Template.Spec.Containers[0].Resources.Requests = make(v1.ResourceList)
-		}
-
-		if deployment.Spec.Template.Spec.Containers[0].Resources.Limits == nil {
-			deployment.Spec.Template.Spec.Containers[0].Resources.Limits = make(v1.ResourceList)
-		}
-
-		deployment.Spec.Template.Spec.Containers[0].Resources.Requests["cpu"] = *cpuRequest
-		deployment.Spec.Template.Spec.Containers[0].Resources.Limits["cpu"] = *cpuLimit
-		deployment.Spec.Template.Spec.Containers[0].Resources.Requests["memory"] = *memoryRequest
-		deployment.Spec.Template.Spec.Containers[0].Resources.Limits["memory"] = *memoryLimit
-
-		deploymentUpdated, err := cliSet.AppsV1().Deployments(namespace).Update(context.Background(), deployment, metav1.UpdateOptions{})
-		if err != nil {
-			logger.Error(fmt.Sprintf("Error updating deployment %s in namespace %s: %s", deployment.Name, namespace, err.Error()))
-		}
-
-		logger.Info(fmt.Sprintf("Deployment %s in namespace %s updated with new resources: cpu: %vm/%vm => %vm/%vm; memory: %vMi/%vMi => %vMi/%vMi",
-			deploymentUpdated.Name, namespace,
-			actualCpuRequest, actualCpuLimit, newCpuRequest, newCpuLimit,
-			actualMemoryRequest, actualMemoryLimit, newMemoryRequest, newMemoryLimit,
-		))
-	} else {
-		logger.Debug(fmt.Sprintf("Deployment %s in namespace %s already has the correct resources", deployment.Name, namespace))
-	}
+		deployment.Spec.Template.Spec.Containers[0].Resources.Requests.Memory().MilliValue()/1000/1024/1024,
+		deployment.Spec.Template.Spec.Containers[0].Resources.Limits.Memory().MilliValue()/1000/1024/1024,
+		int64(resources.Memory.Request),
+		int64(resources.Memory.Limit),
+	)
 	return nil
+}
+
+func updateResources(cliSet *kubernetes.Clientset, namespace string, deployment *appv1.Deployment, actualCpuRequest, actualCpuLimit, newCpuRequest, newCpuLimit, actualMemoryRequest, actualMemoryLimit, newMemoryRequest, newMemoryLimit int64) {
+	if actualCpuRequest != newCpuRequest || actualCpuLimit != newCpuLimit || actualMemoryRequest != newMemoryRequest || actualMemoryLimit != newMemoryLimit {
+		if ok := updateResourceValues(deployment, newCpuRequest, newCpuLimit, newMemoryRequest, newMemoryLimit); ok {
+			deploymentUpdated, err := cliSet.AppsV1().Deployments(namespace).Update(context.Background(), deployment, metav1.UpdateOptions{})
+			if err != nil {
+				logger.Error(fmt.Sprintf("Error updating deployment %s in namespace %s: %s", deployment.Name, namespace, err.Error()))
+				return
+			}
+
+			logger.Info(fmt.Sprintf("Deployment %s in namespace %s updated with new resources: cpu: %vm/%vm => %vm/%vm; memory: %vMi/%vMi => %vMi/%vMi",
+				deploymentUpdated.Name, namespace,
+				actualCpuRequest, actualCpuLimit, newCpuRequest, newCpuLimit,
+				actualMemoryRequest, actualMemoryLimit, newMemoryRequest, newMemoryLimit,
+			))
+		}
+	}
+}
+
+func updateResourceValues(deployment *appv1.Deployment, newCpuRequest, newCpuLimit, newMemoryRequest, newMemoryLimit int64) bool {
+	needUpdate := false
+
+	if ok := setResourceValue(&deployment.Spec.Template.Spec.Containers[0].Resources.Requests, "cpu", newCpuRequest, resource.NewMilliQuantity); ok && !needUpdate {
+		needUpdate = true
+	}
+	if ok := setResourceValue(&deployment.Spec.Template.Spec.Containers[0].Resources.Limits, "cpu", newCpuLimit, resource.NewMilliQuantity); ok && !needUpdate {
+		needUpdate = true
+	}
+	if ok := setResourceValue(&deployment.Spec.Template.Spec.Containers[0].Resources.Requests, "memory", newMemoryRequest*1024*1024, resource.NewQuantity); ok && !needUpdate {
+		needUpdate = true
+	}
+	if ok := setResourceValue(&deployment.Spec.Template.Spec.Containers[0].Resources.Limits, "memory", newMemoryLimit*1024*1024, resource.NewQuantity); ok && !needUpdate {
+		needUpdate = true
+	}
+
+	return needUpdate
+}
+
+func setResourceValue(resourceList *v1.ResourceList, resourceName string, value int64, resourceFunc func(int64, resource.Format) *resource.Quantity) bool {
+	if value > 0 {
+		if *resourceList == nil {
+			*resourceList = make(v1.ResourceList)
+		}
+		quantity := resourceFunc(value, resource.DecimalSI)
+		(*resourceList)[v1.ResourceName(resourceName)] = *quantity
+		return true
+	}
+	return false
 }

@@ -1,8 +1,8 @@
 package kubernetes
 
 import (
-	"k8s-resources-update/internal/config"
-	"k8s-resources-update/internal/util"
+	"kube-recall/internal/config"
+	"kube-recall/internal/util"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -17,7 +17,7 @@ var (
 
 func getTagets() []config.Target {
 	targets := cfg.Kubernetes.Targets
-	if targets == nil || len(targets) == 0 {
+	if len(targets) == 0 {
 		targets = append(targets, config.Target{})
 	}
 	return targets

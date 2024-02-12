@@ -34,8 +34,11 @@ type (
 		Request float64 `yaml:"request"`
 		Limit   float64 `yaml:"limit"`
 	}
+	Provider struct {
+		DataDog DataDog `yaml:"datadog"`
+	}
 	Config struct {
-		DataDog    DataDog           `yaml:"datadog"`
+		Provider   Provider          `yaml:"provider"`
 		Kubernetes Kubernetes        `yaml:"kubernetes"`
 		Filters    map[string]string `yaml:"filters"`
 		Scales     struct {

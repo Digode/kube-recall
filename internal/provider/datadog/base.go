@@ -2,8 +2,8 @@ package datadog
 
 import (
 	"context"
-	"k8s-resources-update/internal/config"
-	"k8s-resources-update/internal/util"
+	"kube-recall/internal/config"
+	"kube-recall/internal/util"
 	"strings"
 	"time"
 
@@ -15,10 +15,10 @@ var cfg = config.Get()
 func getContext() context.Context {
 	return context.WithValue(context.Background(), datadog.ContextAPIKeys, map[string]datadog.APIKey{
 		"apiKeyAuth": {
-			Key: cfg.DataDog.ApiKey,
+			Key: cfg.Provider.DataDog.ApiKey,
 		},
 		"appKeyAuth": {
-			Key: cfg.DataDog.AppKey,
+			Key: cfg.Provider.DataDog.AppKey,
 		},
 	})
 }

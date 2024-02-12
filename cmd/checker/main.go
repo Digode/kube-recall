@@ -1,9 +1,9 @@
 package main
 
 import (
-	"k8s-resources-update/internal/checker"
-	"k8s-resources-update/internal/config"
-	"k8s-resources-update/internal/util"
+	"kube-recall/internal/checker"
+	"kube-recall/internal/config"
+	"kube-recall/internal/util"
 )
 
 var logger = util.GetLogger()

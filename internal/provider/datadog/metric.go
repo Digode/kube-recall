@@ -2,7 +2,7 @@ package datadog
 
 import (
 	"fmt"
-	"k8s-resources-update/internal/model"
+	"kube-recall/internal/model"
 	"strings"
 	"time"
 
@@ -10,7 +10,11 @@ import (
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 )
 
-func GetMetrics(filters map[string]string, begin, end time.Time) (map[string]model.Metrics, error) {
+func GetMetrics(filters map[string]string) (map[string]model.Metrics, error) {
+	end := time.Now()
+	begin := end.AddDate(0, 0, cfg.Provider.DataDog.Times.Begin)
+	end = end.AddDate(0, 0, cfg.Provider.DataDog.Times.End)
+
 	beginUnix := begin.Unix()
 	endUnix := end.Unix()
 	query := buildCompleteQuery(filters)
@@ -24,19 +28,19 @@ func GetMetrics(filters map[string]string, begin, end time.Time) (map[string]mod
 func buildCompleteQuery(filters map[string]string) string {
 	filterDeploy := buildFilterQuery(filters)
 	metrics := []string{
-		cfg.DataDog.Tags.Replicas,
-		cfg.DataDog.Tags.Memory.Usage,
-		cfg.DataDog.Tags.Memory.Request,
-		cfg.DataDog.Tags.Memory.Limit,
-		cfg.DataDog.Tags.Cpu.Usage,
-		cfg.DataDog.Tags.Cpu.Request,
-		cfg.DataDog.Tags.Cpu.Limit,
+		cfg.Provider.DataDog.Tags.Replicas,
+		cfg.Provider.DataDog.Tags.Memory.Usage,
+		cfg.Provider.DataDog.Tags.Memory.Request,
+		cfg.Provider.DataDog.Tags.Memory.Limit,
+		cfg.Provider.DataDog.Tags.Cpu.Usage,
+		cfg.Provider.DataDog.Tags.Cpu.Request,
+		cfg.Provider.DataDog.Tags.Cpu.Limit,
 	}
 	metricQuery := "avg:%s{%s} by {%s, %s}"
 	queries := make([]string, len(metrics))
 
 	for i, metric := range metrics {
-		queries[i] = fmt.Sprintf(metricQuery, metric, filterDeploy, cfg.DataDog.Tags.Namespace, cfg.DataDog.Tags.Deployment)
+		queries[i] = fmt.Sprintf(metricQuery, metric, filterDeploy, cfg.Provider.DataDog.Tags.Namespace, cfg.Provider.DataDog.Tags.Deployment)
 	}
 	return strings.Join(queries, ", ")
 }
@@ -59,7 +63,10 @@ func mapMetrics(allMetrics []model.MetricItem) map[string]model.Metrics {
 				TimeSeries: make(map[time.Time]model.Resources),
 			}
 		}
-		metrics, _ := result[metric.Deployment]
+		metrics, ok := result[metric.Deployment]
+		if !ok {
+			metrics = model.Metrics{}
+		}
 		resource, ok := metrics.TimeSeries[metric.Time]
 		if !ok {
 			resource = model.Resources{}
@@ -72,19 +79,19 @@ func mapMetrics(allMetrics []model.MetricItem) map[string]model.Metrics {
 
 func getMetric(metric model.MetricItem, resource model.Resources) model.Resources {
 	switch metric.Kind {
-	case cfg.DataDog.Tags.Replicas:
+	case cfg.Provider.DataDog.Tags.Replicas:
 		resource.Replicas = metric.Value
-	case cfg.DataDog.Tags.Memory.Usage:
+	case cfg.Provider.DataDog.Tags.Memory.Usage:
 		resource.Memory.Usage = bytesToMb(metric.Value)
-	case cfg.DataDog.Tags.Memory.Request:
+	case cfg.Provider.DataDog.Tags.Memory.Request:
 		resource.Memory.Request = bytesToMb(metric.Value)
-	case cfg.DataDog.Tags.Memory.Limit:
+	case cfg.Provider.DataDog.Tags.Memory.Limit:
 		resource.Memory.Limit = bytesToMb(metric.Value)
-	case cfg.DataDog.Tags.Cpu.Usage:
+	case cfg.Provider.DataDog.Tags.Cpu.Usage:
 		resource.CPU.Usage = nanoToCore(metric.Value)
-	case cfg.DataDog.Tags.Cpu.Request:
+	case cfg.Provider.DataDog.Tags.Cpu.Request:
 		resource.CPU.Request = clockToMilicore(metric.Value)
-	case cfg.DataDog.Tags.Cpu.Limit:
+	case cfg.Provider.DataDog.Tags.Cpu.Limit:
 		resource.CPU.Limit = clockToMilicore(metric.Value)
 	}
 	return resource
@@ -102,8 +109,8 @@ func getMetrics(begin, end int64, query string) ([]model.MetricItem, error) {
 	var metrics []model.MetricItem
 	for _, serie := range resp.Series {
 		tags := serie.GetTagSet()
-		namespace := getTag(tags, cfg.DataDog.Tags.Namespace)
-		deployment := getTag(tags, cfg.DataDog.Tags.Deployment)
+		namespace := getTag(tags, cfg.Provider.DataDog.Tags.Namespace)
+		deployment := getTag(tags, cfg.Provider.DataDog.Tags.Deployment)
 
 		if namespace == "" || deployment == "" || deployment == "N/A" {
 			continue
